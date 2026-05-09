@@ -124,6 +124,66 @@ async def auto_greet(sess: BrowserSession, query: str = "算法工程师",
 
 # ─────────────────── debug ops ───────────────────
 
+async def list_chats(sess: BrowserSession, page: int = 1, size: int = 50) -> dict:
+    """获取与 boss 们的聊天列表（含 last 消息、未读数、boss 信息）。"""
+    r = await sess.fetch(
+        "https://www.zhipin.com/wapi/zprelation/friend/getGeekFriendList.json",
+        method="POST",
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+            "Referer": "https://www.zhipin.com/web/geek/chat",
+        },
+        body=f"page={page}&size={size}",
+    )
+    if not r.get("ok"):
+        return {"ok": False, "error": r.get("error")}
+    data = json.loads(r["body"])
+    if data.get("code") != 0:
+        return {"ok": False, "code": data.get("code"), "message": data.get("message")}
+    chats = (data.get("zpData") or {}).get("result") or []
+    # 简化字段，方便落表
+    items = [{
+        "encrypt_boss_id": c.get("encryptBossId"),
+        "boss_name": c.get("name"),
+        "boss_title": c.get("title"),
+        "brand": c.get("brandName"),
+        "encrypt_job_id": c.get("encryptJobId"),
+        "job_id": c.get("jobId"),
+        "last_msg": c.get("lastMsg"),
+        "last_time": c.get("lastTime"),
+        "last_ts": c.get("lastTS"),
+        "unread": c.get("unreadMsgCount"),
+        "chat_status": c.get("chatStatus"),
+        "from_me": (c.get("lastMessageInfo") or {}).get("fromId"),
+        "to": (c.get("lastMessageInfo") or {}).get("toId"),
+        "msg_status": (c.get("lastMessageInfo") or {}).get("status"),
+        "filtered": c.get("isFiltered"),
+        "security_id": c.get("securityId"),
+    } for c in chats]
+    return {
+        "ok": True, "count": len(items), "chats": items,
+        "_persist": "boss_chats", "items": items,
+    }
+
+
+async def get_history_msg(sess: BrowserSession, boss_id: str = "",
+                          max_msg_id: int = 0, count: int = 30) -> dict:
+    """拉某个 boss 的历史聊天消息。boss_id = encryptBossId。"""
+    if not boss_id:
+        return {"ok": False, "error": "需要 boss_id (encryptBossId)"}
+    r = await sess.fetch(
+        f"https://www.zhipin.com/wapi/zpchat/geek/historyMsg"
+        f"?bossId={boss_id}&maxMsgId={max_msg_id}&count={count}",
+        headers={"Accept": "application/json", "Referer": "https://www.zhipin.com/web/geek/chat"},
+    )
+    if not r.get("ok"):
+        return {"ok": False, "error": r.get("error")}
+    data = json.loads(r["body"])
+    return {"ok": data.get("code") == 0, "code": data.get("code"),
+            "data": data.get("zpData", {})}
+
+
 async def get_cookie(sess: BrowserSession) -> dict:
     return {"ok": True, "cookie": await sess.cookie()}
 
@@ -299,6 +359,8 @@ BOSS_OPERATIONS = {
     "greet": greet,
     "greet_selected": greet_selected,
     "auto_greet": auto_greet,
+    "list_chats": list_chats,
+    "get_history_msg": get_history_msg,
     "list_cities": list_cities,
     "list_industries": list_industries,
     "get_cookie": get_cookie,
