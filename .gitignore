@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# 项目运行时数据（绝对不上传）
+data/
+analysis/                  # 含目标站点的源代码 + 实验产物
+chrome-profile/
+chrome-debug-profile/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# 临时
+*.log
+*.tmp
+*.bak
+
+# 证书
+*.cer
+*.pem
+*.key
+
+# 本地配置（用户改后不应推回）
+config.local.*
