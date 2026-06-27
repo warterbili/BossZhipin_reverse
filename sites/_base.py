@@ -1,10 +1,10 @@
 """Site plugin abstract base class.
 
 每个目标站点 = 一个 sites/<name>/ 目录，里面定义:
+  - __init__.py: SitePlugin 子类 + health_check()（检测 patch 是否还匹配最新 JS）
   - patches.py: mitm 要 patch 的 JS 函数签名
   - operations.py: 暴露给 UI/API 的业务操作 (search/greet/...)
   - injection.js: 注入到该站点页面的 JS（通常是把加密类暴露到顶层）
-  - selftest.py: 健康检查（检测 patch 是否还匹配最新 JS）
 
 新增站点的最小实现见 docs/PLUGIN_GUIDE.md
 """
@@ -18,17 +18,26 @@ from typing import Any, Callable
 
 @dataclass
 class JsPatch:
-    """JS 函数体替换规则。
+    """JS patch 规则。两种模式:
 
-    name:        显示名（"Bm", "function t"）
-    pattern:     找到目标函数声明的正则（必须捕获到 'function NAME() {' 的开头）
-    replacement: 函数体替换为啥（默认空函数体）
-    notes:       说明（教学用）
+    mode="body"（默认）—— 函数体替换:
+        pattern 匹配到 'function NAME() {' 的开头，mitm 用大括号配对找到函数体并整体替换成
+        replacement_body（默认空函数体 '{}'）。适合【函数型】检测点 (Bm / Rm / XCID …)。
+
+    mode="sub" —— 纯正则替换:
+        直接 re.sub(pattern, replacement, js)。适合【表达式型】检测点，它们不是完整函数、无法靠
+        “清空函数体”处理，例如 console.clear 包装器、内存炸弹 new Array(1eN) / .repeat(1eN)。
+        replacement 支持 \\1 反向引用。
+
+    name:  显示名 ; notes: 说明（教学用）
     """
     name: str
     pattern: re.Pattern
-    replacement_body: str = "{}"
+    replacement_body: str = "{}"      # mode="body"
     notes: str = ""
+    mode: str = "body"                # "body" | "sub"
+    replacement: str = ""             # mode="sub" 的替换串（可含 \1 反向引用）
+    spa_only: bool = False            # 只在 SPA bundle(app~*/vendor-*)出现，不在 main.js → health_check 跳过
 
 
 @dataclass

@@ -240,11 +240,11 @@ def cmd_greet(args):
             "security_id": sid, "job_id": jid, "lid": j.get("lid", ""),
             "query": args.query, "city": args.city,
         })
-        code = r.get("data", {}).get("code")
+        code = r.get("code")
         if code == 0:
             ok += 1; print("✅")
         else:
-            fail += 1; print(f"⚠️ code={code} {r.get('data',{}).get('message','')}")
+            fail += 1; print(f"⚠️ code={code} {r.get('message','')}")
         if i < len(sel) - 1: time.sleep(args.interval)
     print(f"\n完成: ✅ {ok} · ❌ {fail}")
 

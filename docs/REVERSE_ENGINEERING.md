@@ -141,6 +141,38 @@ python cli.py health boss
 
 零算法逆向，浏览器替你跑。
 
+### seed 是怎么来的（已实测确认）
+
+- **seed 是服务端生成、下发的，不是客户端算的。** 证据：纯 Python（无浏览器、无 JS）发请求，
+  在 `code:37` 响应体里直接收到 `zpData.{seed, name, ts}`（`name` = 当前 security-js 文件名，会轮换）。
+- 浏览器把这份 37 响应**缓存进 `localStorage['passport_config']`**；之后主动刷新 token 时从缓存读
+  seed，**不必每次再发 37**（正常浏览几乎抓不到 37）。
+- **一个 seed 约可复用 5 次**（实测 3/3：前 5 个 token 被接受，第 6 起 `code:37`），用满后再触发一次
+  37 拿新 seed。
+- `ABC.z(seed, ts)` 把服务端 seed **原样**用，内部再掺 canvas/WebGL 设备指纹 + 随机数，所以同一
+  `(seed, ts)` 每次输出不同 token（防重放）。
+
+### ⚠️ cookie 编码（最容易踩、也最该写进项目的坑）
+
+`z()` 产出的 token **含 `+` 和 `/`**。浏览器原生 `Cookie.set` 存进 cookie 的是 **URL 编码后**的值
+（`+`→`%2B`, `/`→`%2F`）。**若把裸 token 直接塞 cookie**，服务端 `URL-decode` 会把 `+` 解成**空格** →
+token 损坏 → `code:37「您的环境存在异常」`。
+
+实测隔离（同一 token，只改编码）：
+
+| cookie 写法 | 结果 |
+|---|---|
+| 裸 token（不编码） | `code:37`（3/3） |
+| `encodeURIComponent(token)` / `quote(token, safe='')` | `code:0`，拿到数据 |
+
+所以：
+- **走 `fetch_url`（浏览器自己发请求）** → 浏览器原生处理编码，**无需关心**。这是本项目数据路径，最省心。
+- **在浏览器之外用 token**（自己 `requests` 发） → 入 cookie 前**必须 URL 编码**。`gen_stoken` 已直接
+  返回 `token_encoded` 供外部使用。一个可跑通的例子见 [`tests/gen_external_request.py`](../tests/gen_external_request.py)。
+
+> 调试经验：当“浏览器能成、自己 replay 不成”时，**第一步永远是把两边真实请求/cookie 逐字节 diff** —
+> 这个编码差异（`…/` vs `…%2F`）一眼就能看出来，别先去猜算法/参数。
+
 ---
 
 ## 工具清单

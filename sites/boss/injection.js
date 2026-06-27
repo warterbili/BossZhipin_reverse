@@ -35,6 +35,14 @@
   window.__MITMRPC_OPS__ = window.__MITMRPC_OPS__ || {};
 
   // gen_stoken: 用 ABC.z(seed, ts_corrected) 算 __zp_stoken__
+  //
+  // ⚠️ COOKIE 编码（踩过坑，务必看）：
+  //   z() 产出的 token 含 '+' 和 '/'。浏览器原生 Cookie.set 存的是 URL 编码后的值
+  //   （'+'→%2B, '/'→%2F）。若把【裸 token】塞进 cookie，服务端 URL-decode 会把 '+' 解成空格 →
+  //   token 损坏 → code:37「您的环境存在异常」。
+  //   所以在【浏览器之外】用这个 token（Python/Go 等），入 cookie 前必须 encodeURIComponent /
+  //   quote(token, safe='')。本 op 直接把 token_encoded 一并返回，外部用它即可。
+  //   （走 fetch_url 让浏览器自己发请求时，浏览器原生处理编码，无需关心——见 README。）
   window.__MITMRPC_OPS__.gen_stoken = function(task){
     var ABC = window.__BOSS_ABC__;
     if (typeof ABC !== 'function') {
@@ -42,7 +50,7 @@
     }
     var ts = parseInt(task.ts) + 60 * (480 + (new Date()).getTimezoneOffset()) * 1000;
     var token = (new ABC()).z(task.seed, ts);
-    return {ok: true, token: token, ts_used: ts};
+    return {ok: true, token: token, token_encoded: encodeURIComponent(token), ts_used: ts};
   };
 
   _warn(TAG, '★ boss plugin loaded');

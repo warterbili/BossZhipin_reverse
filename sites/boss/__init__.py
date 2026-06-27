@@ -59,6 +59,8 @@ class BossPlugin(SitePlugin):
                 snippets[f"err:{url}"] = str(e)
                 continue
             for patch in self.patches:
+                if getattr(patch, "spa_only", False):
+                    continue  # 只在 SPA bundle 出现，main.js 里查不到，跳过避免误报
                 key = f"{patch.name}@{url.rsplit('/',1)[-1]}"
                 m = patch.pattern.search(js)
                 if m:

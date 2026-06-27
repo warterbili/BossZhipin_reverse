@@ -16,13 +16,17 @@
 **当前内置**：[Boss 直聘](sites/boss/) (search / greet / auto_greet / capture)
 **扩展**：写一个 `sites/<name>/` 目录就加了新站点（约 100 行）
 
+> 📖 **想看 Boss 整套防护是怎么逆出来的？** → **[`docs/BOSS_DEEP_DIVE.md`](docs/BOSS_DEEP_DIVE.md)**：
+> 反调试七层 + 中和、`__zp_stoken__` 算法、**seed 生命周期（服务端下发 / passport_config 缓存 / ~5 次复用）**、
+> **cookie 编码根因**、三种数据获取方案对比、逆向方法论。这是本仓库沉淀的 Boss 反爬技术说明书。
+
 ---
 
 ## ⚡ 5 分钟跑通
 
 ```powershell
 git clone https://github.com/warterbili/BossZhipin_reverse
-cd mitm-rpc
+cd BossZhipin_reverse
 
 # 一次性安装（venv + mitm CA 证书）
 .\scripts\setup.ps1
@@ -227,6 +231,22 @@ def notify_slack(result):
 ```
 
 事件: `record:<table>` / `capture` / `greet:after` / `search:after` / `health:fail`
+
+---
+
+## ⚠️ 在浏览器之外用 `__zp_stoken__`？先看编码
+
+走本项目主路径（`fetch_url`，**浏览器自己发请求**）时，token 的生成、cookie 编码、TLS 全由浏览器原生处理，
+**你什么都不用管**。
+
+但如果你想**自己生成 token 拿到浏览器外面用**（`gen_stoken` + 自己 `requests` 发）：token 里含 `+` 和 `/`，
+**入 cookie 前必须 URL 编码**（`encodeURIComponent` / `quote(token, safe='')`），否则服务端把 `+` 解成空格 →
+token 损坏 → `code:37`。`gen_stoken` 已直接返回 `token_encoded` 供外部使用。
+
+- seed 来源、缓存、复用次数、编码隔离实验 → [`docs/REVERSE_ENGINEERING.md`](docs/REVERSE_ENGINEERING.md)
+- 可跑通的外部请求例子 → [`tests/gen_external_request.py`](tests/gen_external_request.py)
+
+> 调试铁律：“浏览器能成、自己 replay 不成”时，**先 byte-diff 两边真实 cookie/请求**，别先猜算法。
 
 ---
 

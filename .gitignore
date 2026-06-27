@@ -21,6 +21,7 @@ chrome-debug-profile/
 Thumbs.db
 
 # 临时
+tmp/
 *.log
 *.tmp
 *.bak

@@ -228,23 +228,32 @@ def _apply_patches(flow: http.HTTPFlow) -> None:
     except Exception:
         return
 
-    # 倒序处理避免 offset 错位
-    hits: list[tuple[int, JsPatch]] = []
-    for patch in plugin.patches:
-        for m in patch.pattern.finditer(text):
-            hits.append((m.start(), patch))
-    if not hits:
-        return
-    hits.sort(key=lambda x: x[0], reverse=True)
-
     new_text = text
     msgs = []
+
+    # 1) mode="sub" —— 表达式型检测点，纯正则替换（console.clear 包装器 / 内存炸弹等）
+    for patch in plugin.patches:
+        if getattr(patch, "mode", "body") == "sub":
+            new_text, n = patch.pattern.subn(patch.replacement, new_text)
+            if n:
+                msgs.append(f"{patch.name}×{n}")
+
+    # 2) mode="body" —— 函数型检测点，大括号配对清空函数体（倒序避免 offset 错位）
+    body_patches = [p for p in plugin.patches if getattr(p, "mode", "body") == "body"]
+    hits: list[tuple[int, JsPatch]] = []
+    for patch in body_patches:
+        for m in patch.pattern.finditer(new_text):
+            hits.append((m.start(), patch))
+    hits.sort(key=lambda x: x[0], reverse=True)
     for start, patch in hits:
         body_start = new_text.find("{", start) + 1
         end = _find_balanced_end(new_text, body_start)
         decl = new_text[start:body_start] + patch.replacement_body[1:]  # 去掉前导 '{'
         new_text = new_text[:start] + decl + new_text[end:]
         msgs.append(f"{patch.name}({end - start}b)")
+
+    if not msgs:
+        return
     flow.response.set_text(new_text)
     ctx.log.alert(f"[patch] {plugin.name} {flow.request.path} → {', '.join(msgs)}")
 

@@ -78,7 +78,7 @@ await sess.bus.send("custom_op", **payload)   # 自定义 op
 - `patches.py`: 反调试函数签名（用 regex 匹配）
 - `operations.py`: 业务操作（搜、招呼、查详情...）
 - `injection.js`: 注入到该站页面的脚本
-- `selftest.py` / `__init__.py.health_check()`: 健康检查
+- `__init__.py` 的 `health_check()`: 健康检查（patch 是否还匹配最新 JS）
 
 ### `storage/` — 存储后端
 

@@ -83,13 +83,14 @@ async def greet(sess: BrowserSession, security_id: str = "", job_id: str = "",
         data = json.loads(r.get("body", ""))
     except Exception:
         return {"ok": False, "raw": r.get("body", "")[:500]}
-    persist = {
-        "_persist": "boss_greetings",
-        "security_id": security_id, "job_id": job_id, "query": query,
+    # 顶层 code/message 为权威字段，所有调用方读这里（data 仅放 zpData：greeting/encBossId 等）
+    return {
+        "ok": True,
         "code": data.get("code"), "message": data.get("message"),
         "data": data.get("zpData", {}),
+        "_persist": "boss_greetings",  # server 弹出 _persist 后自动落表
+        "security_id": security_id, "job_id": job_id, "query": query,
     }
-    return {"ok": True, "data": data, **persist}
 
 
 # ─────────────────── batch greet ───────────────────
@@ -114,7 +115,7 @@ async def auto_greet(sess: BrowserSession, query: str = "算法工程师",
                         query=query, city=city)
         results.append({
             "job": j.get("jobName"), "boss": j.get("brandName"),
-            "ok": r.get("ok"), "code": r.get("data", {}).get("code"),
+            "ok": r.get("ok"), "code": r.get("code"),
         })
         if i < len(jobs) - 1:
             import asyncio
@@ -271,7 +272,20 @@ async def list_cities(sess: BrowserSession, hot_only: bool = True) -> dict:
 
 
 async def gen_stoken(sess: BrowserSession, seed: str = "", ts: int = 0) -> dict:
-    """直接调浏览器算 stoken（debug 用）。"""
+    """让浏览器算一个 __zp_stoken__，返回 {token, token_encoded, ts_used}。
+
+    seed / ts 的来源（已逆向确认）:
+      - seed 是服务端【生成并下发】的一次性串：某接口返回 code:37 时,
+        body 里带 zpData.{seed, name, ts}（name 是 security-js 文件名,会轮换）。
+      - 浏览器把这份 37 响应缓存进 localStorage['passport_config']；主动刷新 token 时从
+        缓存读 seed,不必每次再发 37。一个 seed 约可复用 5 次,用满后再触发一次 37 拿新 seed。
+      - 客户端不生成 seed；ABC.z(seed, ts) 把服务端 seed 原样用,内部还掺设备指纹+随机数
+        (所以同一 seed/ts 每次输出不同 token)。
+
+    ⚠️ 编码：token 含 '+' '/'。【浏览器之外】用它(放 cookie / 发请求)前必须 URL 编码,
+       否则服务端把 '+' 解成空格,token 损坏 → code:37。本函数返回的 token_encoded 就是
+       quote(token) 后的值,外部直接用它。详见 docs/REVERSE_ENGINEERING.md。
+    """
     if ts == 0:
         ts = int(time.time() * 1000)
     return await sess.bus.send("gen_stoken", seed=seed, ts=ts)
@@ -339,12 +353,11 @@ async def greet_selected(sess: BrowserSession, jobs: list = None,
             continue
         r = await greet(sess, security_id=sid, job_id=jid, lid=lid,
                         query=query, city=city)
-        d = r.get("data", {})
         results.append({
             "job": name, "brand": brand,
-            "ok": r.get("ok") and d.get("code") == 0,
-            "code": d.get("code"),
-            "message": d.get("message", ""),
+            "ok": r.get("ok") and r.get("code") == 0,
+            "code": r.get("code"),
+            "message": r.get("message", ""),
         })
         if i < len(jobs) - 1:
             await asyncio.sleep(interval)
