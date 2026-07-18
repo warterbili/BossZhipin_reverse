@@ -23,11 +23,19 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from sites._base import SitePlugin, JsPatch, HtmlInject  # noqa: E402
+from sites._base import SitePlugin, HtmlInject  # noqa: E402
+from core.patching import apply_js_patches  # noqa: E402
 
 # ─────────────────────── 插件加载 ───────────────────────
 
 PLUGINS: list[SitePlugin] = []
+
+
+def _startup_log(level: str, message: str) -> None:
+    """Log during mitmdump startup; remain importable in unit-test contexts."""
+    logger = getattr(ctx, "log", None)
+    if logger is not None:
+        getattr(logger, level)(message)
 
 
 def _load_plugins() -> None:
@@ -40,7 +48,7 @@ def _load_plugins() -> None:
         try:
             mod = importlib.import_module(f"sites.{mod_name}")
         except Exception as e:
-            ctx.log.warn(f"[plugin] load fail {mod_name}: {e}")
+            _startup_log("warn", f"[plugin] load fail {mod_name}: {e}")
             continue
         # 找模块顶层导出的 SitePlugin 子类的 *实例*（约定: PLUGIN = ClassName())
         plugin = getattr(mod, "PLUGIN", None)
@@ -51,18 +59,20 @@ def _load_plugins() -> None:
                     plugin = obj()
                     break
         if plugin is None:
-            ctx.log.warn(f"[plugin] {mod_name}: no SitePlugin found")
+            _startup_log("warn", f"[plugin] {mod_name}: no SitePlugin found")
             continue
         PLUGINS.append(plugin)
-        ctx.log.alert(f"[plugin] loaded: {plugin.name} ({len(plugin.patches)} patches, "
-                      f"{len(plugin.injections)} injections)")
+        _startup_log(
+            "alert",
+            f"[plugin] loaded: {plugin.name} ({len(plugin.patches)} patches, "
+            f"{len(plugin.injections)} injections)",
+        )
 
 
 _load_plugins()
 
 # ─────────────────────── 通用 RPC 注入 ───────────────────────
-# 这段是站点无关的：任何被任意插件认领的 HTML，顶部都注一份 RPC poller
-# 站点专属的注入（比如 Boss 的 ABC 桥）由插件自己提供 HtmlInject
+# Boss HTML 使用通用 RPC poller；ABC 暴露等 Boss 特定逻辑由 HtmlInject 提供。
 RPC_POLLER_JS = """<script>(function(){
   if (window.__MITMRPC_LOADED__) return;
   window.__MITMRPC_LOADED__ = true;
@@ -159,9 +169,6 @@ RPC_POLLER_JS = """<script>(function(){
 CAPTURE_DIR = ROOT / "data" / "captures"
 CAPTURE_DIR.mkdir(parents=True, exist_ok=True)
 CAPTURE_FILE = CAPTURE_DIR / "live.jsonl"
-CAPTURE_ENABLED = True  # 由 /api/capture 切换
-
-
 import urllib.request as _urlreq
 import urllib.error as _urlerr
 
@@ -184,6 +191,8 @@ def _post_to_server(rec: dict) -> None:
 
 def _capture(flow: http.HTTPFlow) -> None:
     if not flow.response:
+        return
+    if not (CAPTURE_DIR / "_enabled").exists():
         return
     host = (flow.request.host or "").lower()
     if not any(p.matches_host(host) for p in PLUGINS):
@@ -228,54 +237,13 @@ def _apply_patches(flow: http.HTTPFlow) -> None:
     except Exception:
         return
 
-    new_text = text
-    msgs = []
-
-    # 1) mode="sub" —— 表达式型检测点，纯正则替换（console.clear 包装器 / 内存炸弹等）
-    for patch in plugin.patches:
-        if getattr(patch, "mode", "body") == "sub":
-            new_text, n = patch.pattern.subn(patch.replacement, new_text)
-            if n:
-                msgs.append(f"{patch.name}×{n}")
-
-    # 2) mode="body" —— 函数型检测点，大括号配对清空函数体（倒序避免 offset 错位）
-    body_patches = [p for p in plugin.patches if getattr(p, "mode", "body") == "body"]
-    hits: list[tuple[int, JsPatch]] = []
-    for patch in body_patches:
-        for m in patch.pattern.finditer(new_text):
-            hits.append((m.start(), patch))
-    hits.sort(key=lambda x: x[0], reverse=True)
-    for start, patch in hits:
-        body_start = new_text.find("{", start) + 1
-        end = _find_balanced_end(new_text, body_start)
-        decl = new_text[start:body_start] + patch.replacement_body[1:]  # 去掉前导 '{'
-        new_text = new_text[:start] + decl + new_text[end:]
-        msgs.append(f"{patch.name}({end - start}b)")
-
-    if not msgs:
+    result = apply_js_patches(text, plugin.patches)
+    if not result.messages:
         return
-    flow.response.set_text(new_text)
-    ctx.log.alert(f"[patch] {plugin.name} {flow.request.path} → {', '.join(msgs)}")
-
-
-def _find_balanced_end(s: str, body_start: int) -> int:
-    """从 body_start (函数体首字符) 起，括号配对找闭合 } 之后。"""
-    depth = 1; i = body_start; n = len(s); BS = "\\"
-    while i < n and depth > 0:
-        c = s[i]
-        if c == BS: i += 2; continue
-        if c == "{": depth += 1
-        elif c == "}": depth -= 1
-        elif c in '"\'':
-            q = c; i += 1
-            while i < n and s[i] != q:
-                i += 2 if s[i] == BS else 1
-        elif c == "/" and i + 1 < n and s[i + 1] == "*":
-            e = s.find("*/", i + 2)
-            i = e + 2 if e >= 0 else n
-            continue
-        i += 1
-    return i
+    flow.response.set_text(result.text)
+    ctx.log.alert(
+        f"[patch] {plugin.name} {flow.request.path} -> {', '.join(result.messages)}"
+    )
 
 
 def _inject_html(flow: http.HTTPFlow) -> None:

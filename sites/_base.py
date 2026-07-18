@@ -1,12 +1,9 @@
-"""Site plugin abstract base class.
+"""Internal capability boundary used by the Boss Zhipin implementation.
 
-每个目标站点 = 一个 sites/<name>/ 目录，里面定义:
-  - __init__.py: SitePlugin 子类 + health_check()（检测 patch 是否还匹配最新 JS）
-  - patches.py: mitm 要 patch 的 JS 函数签名
-  - operations.py: 暴露给 UI/API 的业务操作 (search/greet/...)
-  - injection.js: 注入到该站点页面的 JS（通常是把加密类暴露到顶层）
-
-新增站点的最小实现见 docs/PLUGIN_GUIDE.md
+The repository currently supports only ``sites/boss``.  ``SitePlugin`` keeps
+Boss patches, injections, health checks, and operations isolated; it is not a
+claim that additional targets have been implemented or validated.  See
+``docs/PLUGIN_GUIDE.md`` for the boundary's design reference.
 """
 from __future__ import annotations
 
@@ -65,7 +62,7 @@ class HealthCheckResult:
 
 
 class SitePlugin(ABC):
-    """站点插件基类。子类实现下列字段/方法即可。"""
+    """Boss 能力边界的内部抽象基类。"""
 
     name: str = ""
     domains: list[str] = []  # ["zhipin.com", "static.zhipin.com"]

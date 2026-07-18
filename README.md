@@ -1,8 +1,8 @@
 # BossZhipin Reverse · mitm-rpc
 
-> 把已登录的浏览器变成 RPC 客户端，用来绕过反爬/反调试。**站点无关 · 插件式 · CLI 优先 · AI 友好**。
+> 把已登录的真实浏览器变成 RPC 执行端，专门用于 Boss 直聘反调试研究与登录态接口验证。**Boss 专项 · mitm 改写 · 浏览器 RPC · AI 可维护**。
 >
-> **本仓库内置 Boss 直聘插件作为完整范例**，架构本身可扩展任意站点（拉勾 / 抖音 / 小红书...）。看 [docs/PLUGIN_GUIDE.md](docs/PLUGIN_GUIDE.md)。
+> 仓库目前只将 **Boss 直聘** 视为支持目标。`SitePlugin` 边界保留为内部组织方式，不代表其他站点已适配或实测。
 
 ```
 你的脚本  ──HTTP──▶  本地 FastAPI  ──任务队列──▶  浏览器（已登录）  ──fetch──▶  目标站点
@@ -13,8 +13,7 @@
 
 不解算法、不伪造指纹、**用真实浏览器替你发请求**。所有反爬最难的部分（TLS/sec-ch-ua/cookie 漂移/`__zp_stoken__`）都被原生处理。
 
-**当前内置**：[Boss 直聘](sites/boss/)（search / search_pages / greet / greet_selected / auto_greet / list_chats / get_history_msg / list_cities / list_industries / get_cookie / gen_stoken / capture）
-**扩展**：写一个 `sites/<name>/` 目录就加了新站点（约 100 行）
+**Boss 能力**：search / search_pages / greet / greet_selected / auto_greet / list_chats / get_history_msg / list_cities / list_industries / get_cookie / gen_stoken / capture
 
 > 📖 **想看 Boss 整套防护是怎么逆出来的？** → **[`docs/BOSS_DEEP_DIVE.md`](docs/BOSS_DEEP_DIVE.md)**：
 > 反调试七层 + 中和、`__zp_stoken__` 算法、**seed 生命周期（服务端下发 / passport_config 缓存 / ~5 次复用）**、
@@ -29,7 +28,7 @@
 | 模块 | 实测结果 |
 |---|---|
 | mitm TLS | 已能解密 Boss 直聘 HTTPS 流量 |
-| 反调试 patch | `Bm` / `Rm` / `XCID` / `XCIT` / console.clear / 内存炸弹签名健康检查通过（覆盖 SEO main.js + SPA vendor/app bundle） |
+| 反调试 patch | `Bm` / `Rm` / `XCID` / `XCIT` / console.clear / 内存炸弹当前签名命中；实际改写后的 SEO/SPA bundle 已通过 Node 语法检查 |
 | DevTools | 登录后打开 F12，页面不退站、不刷屏、不 OOM |
 | RPC | 真实浏览器 `eval` / `cookie` / `fetch_url` 闭环通过 |
 | Boss 业务 | search / list_cities / list_industries / list_chats / gen_stoken / greet 均已跑通 |
@@ -166,6 +165,7 @@ BossZhipin_reverse/
 ├── core/
 │   ├── server.py               FastAPI: RPC + API + Capture
 │   ├── mitm_addon.py           mitmproxy addon
+│   ├── patching.py              运行时/验证器共用的 JS patch 引擎
 │   ├── rpc.py                  浏览器 ↔ python 协议
 │   └── browser.py              Chrome 启动器
 ├── sites/
@@ -184,7 +184,8 @@ BossZhipin_reverse/
 ├── scripts/
 │   ├── setup.ps1               一次性安装
 │   ├── doctor.ps1              环境体检
-│   └── healthcheck.py          CLI 健康检查
+│   ├── healthcheck.py          当前 bundle 签名健康检查
+│   └── validate_boss_patches.py 实际改写 + Node 语法验证
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── BOSS_DEEP_DIVE.md
@@ -192,42 +193,18 @@ BossZhipin_reverse/
 │   └── REVERSE_ENGINEERING.md
 ├── tests/
 │   ├── gen_external_request.py 外部 requests + gen_stoken 示例
-│   └── greet_from_csv.py       从 CSV 批量打招呼示例
+│   ├── greet_from_csv.py       从 CSV 批量打招呼示例
+│   └── test_*.py               patch/抓包开关/业务语义回归
 ├── SKILL.md                    AI Agent 用文档
 └── data/                       运行时（gitignored）
 ```
 
 ---
 
-## 🧩 加新站点
+## 🧩 为什么仍保留 SitePlugin
 
-```python
-# sites/example/__init__.py
-import re
-from sites._base import SitePlugin, JsPatch
-
-class ExamplePlugin(SitePlugin):
-    name = "example"
-    domains = ["example.com"]
-    patches = [
-        JsPatch(
-            name="anti_debug",
-            pattern=re.compile(r"function\s+evilCheck\s*\(\)"),
-            replacement_body="{}",
-        ),
-    ]
-    def operations(self):
-        async def hello(sess, **kw):
-            r = await sess.fetch("https://example.com/api")
-            return {"ok": True, "data": r}
-        return {"hello": hello}
-    def health_check(self, _):
-        return HealthCheckResult(site=self.name, ok=True, ...)
-
-PLUGIN = ExamplePlugin()
-```
-
-完整指南：[docs/PLUGIN_GUIDE.md](docs/PLUGIN_GUIDE.md)
+`sites/_base.py` 与 `sites/boss/` 的边界用于隔离 Boss 特定的 patch、注入和业务接口，方便独立健康检查与回归。
+它是内部代码组织方式，而不是对外承诺的多站点框架。[docs/PLUGIN_GUIDE.md](docs/PLUGIN_GUIDE.md) 仅作为边界设计参考保留。
 
 ---
 
@@ -251,7 +228,7 @@ def notify_slack(result):
     return result
 ```
 
-事件: `record:<table>` / `capture` / `greet:after` / `search:after` / `health:fail`
+当前实际触发的事件: `record`（可用 `table=...` 过滤）/ `capture` / `<operation>:after`
 
 ---
 
@@ -276,9 +253,10 @@ token 损坏 → `code:37`。`gen_stoken` 已直接返回 `token_encoded` 供外
 UI 健康灯红 / `cli.py health` 报 patch 失配时：
 
 1. `cli.py health boss` 会先拉当前入口页，自动发现最新 SEO / SPA JS bundle，再逐个检查 patch 签名
-2. 把失配的 bundle 下载到本地 `analysis/`，连同 [`SKILL.md`](SKILL.md) 喂给任意 AI（Claude/GPT）
-3. AI 自动定位新签名，给你新的 `JsPatch` 正则
-4. 改 `sites/<name>/patches.py` 即可
+2. 把失配的 bundle 下载到本项目 `tmp/boss-analysis/`，连同 [`SKILL.md`](SKILL.md) 交给 AI 定位
+3. AI 确认安全/惩罚分支后更新 `sites/boss/patches.py`
+4. 运行 `python scripts/validate_boss_patches.py`，验证真实改写和全部 JS 语法
+5. 登录后再做注入标记、F12 和只读 Boss 接口回归
 
 `SKILL.md` 是为 AI Agent 写的项目说明书 —— 任何 AI 拿到都能上手。
 
@@ -288,7 +266,7 @@ UI 健康灯红 / `cli.py health` 报 patch 失配时：
 
 - 仅供学习反爬和**个人合理使用**
 - 不要用于大规模采集 / 攻击 / 商业爬虫
-- 目标站源代码（main.js 等）不在本仓库，只在你本地 `analysis/` 目录（.gitignore）
+- 目标站源代码（main.js 等）只能临时放在本项目 `tmp/`，不进入 Git
 - 使用违反目标站用户协议的，后果自负
 
 ## License

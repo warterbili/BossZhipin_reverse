@@ -84,9 +84,10 @@ async def greet(sess: BrowserSession, security_id: str = "", job_id: str = "",
     except Exception:
         return {"ok": False, "raw": r.get("body", "")[:500]}
     # 顶层 code/message 为权威字段，所有调用方读这里（data 仅放 zpData：greeting/encBossId 等）
+    code = data.get("code")
     return {
-        "ok": True,
-        "code": data.get("code"), "message": data.get("message"),
+        "ok": code == 0,
+        "code": code, "message": data.get("message"),
         "data": data.get("zpData", {}),
         "_persist": "boss_greetings",  # server 弹出 _persist 后自动落表
         "security_id": security_id, "job_id": job_id, "query": query,
@@ -104,6 +105,7 @@ async def auto_greet(sess: BrowserSession, query: str = "算法工程师",
         return s
     jobs = s["jobs"][:count]
     results = []
+    persist_items = []
     for i, j in enumerate(jobs):
         sid = j.get("securityId")
         jid = j.get("encryptJobId") or j.get("jobId")
@@ -113,14 +115,26 @@ async def auto_greet(sess: BrowserSession, query: str = "算法工程师",
             continue
         r = await greet(sess, security_id=sid, job_id=jid, lid=lid,
                         query=query, city=city)
+        succeeded = r.get("ok") and r.get("code") == 0
         results.append({
             "job": j.get("jobName"), "boss": j.get("brandName"),
-            "ok": r.get("ok"), "code": r.get("code"),
+            "ok": succeeded, "code": r.get("code"),
+            "message": r.get("message", ""),
+        })
+        persist_items.append({
+            "security_id": sid, "job_id": jid, "query": query,
+            "code": r.get("code"), "message": r.get("message"),
+            "data": r.get("data", {}),
         })
         if i < len(jobs) - 1:
             import asyncio
             await asyncio.sleep(interval)
-    return {"ok": True, "results": results}
+    success = sum(1 for result in results if result.get("ok"))
+    return {
+        "ok": True, "total": len(results), "success": success,
+        "all_succeeded": success == len(results), "results": results,
+        "_persist": "boss_greetings", "items": persist_items,
+    }
 
 
 # ─────────────────── debug ops ───────────────────
@@ -342,6 +356,7 @@ async def greet_selected(sess: BrowserSession, jobs: list = None,
         return {"ok": False, "error": "jobs 为空"}
     import asyncio
     results = []
+    persist_items = []
     for i, j in enumerate(jobs):
         sid = j.get("securityId")
         jid = j.get("encryptJobId") or j.get("jobId")
@@ -359,10 +374,19 @@ async def greet_selected(sess: BrowserSession, jobs: list = None,
             "code": r.get("code"),
             "message": r.get("message", ""),
         })
+        persist_items.append({
+            "security_id": sid, "job_id": jid, "query": query,
+            "code": r.get("code"), "message": r.get("message"),
+            "data": r.get("data", {}),
+        })
         if i < len(jobs) - 1:
             await asyncio.sleep(interval)
     success = sum(1 for r in results if r.get("ok"))
-    return {"ok": True, "total": len(jobs), "success": success, "results": results}
+    return {
+        "ok": True, "total": len(jobs), "success": success,
+        "all_succeeded": success == len(jobs), "results": results,
+        "_persist": "boss_greetings", "items": persist_items,
+    }
 
 
 # 暴露给 plugin

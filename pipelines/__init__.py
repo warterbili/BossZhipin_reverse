@@ -29,14 +29,10 @@
             requests.post("https://hooks.slack.com/...", json={"text": result})
         return result
 
-支持的事件:
-  record:<table>    存储前 (return None 丢弃, return dict 继续)
+当前实际触发的事件:
+  record            存储前，用 table="boss_jobs" 等过滤
   capture           mitm 抓到一条新请求
-  rpc:request       浏览器收到 RPC 任务前
-  rpc:response      浏览器返回结果后
-  greet:after       打招呼操作完成
-  search:after      搜索操作完成
-  health:fail       健康检查失败
+  <operation>:after 业务操作完成，如 greet:after / search:after
 """
 from __future__ import annotations
 

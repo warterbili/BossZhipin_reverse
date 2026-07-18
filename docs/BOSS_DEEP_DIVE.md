@@ -115,25 +115,26 @@ token 损坏 → `code:37「您的环境存在异常」`。
 
 ## 5. 三种数据获取方案对比
 
-| | (A) mitm 浏览器发 | (B) RPC 调 gen_stoken | (C) 文件替换 + 外部 Python |
+| | (A) mitm 浏览器发 | (B) RPC 调 gen_stoken | (C) 研究路径：本地文件替换 + 外部 Python |
 |---|---|---|---|
 | 谁发请求 | **浏览器**（`fetch_url`） | 浏览器算 token，Python 发 | Python 发 |
 | token | 浏览器原生（含编码） | `gen_stoken` 返回 `token_encoded` | 自己 `quote()` 编码 |
 | 需要暴露 ABC | 否（数据流用不到） | 是 | 是 |
-| 反调试 | mitm `patches.py` 中和 | 同左 | 文件替换中和 |
+| 反调试 | mitm `patches.py` 中和 | 同左 | 需自行实现文件替换 |
 | 稳定性 / 省心 | ★★★ 最稳 | ★★ | ★★（编码对了就稳） |
 | 适用 | **默认**：低中 QPS、要登录态/真 TLS | 想拿 token 值做别的 | 想脱离浏览器、自建请求管线 |
 
 - **(A) 是本项目主路径**，也是最推荐的：浏览器把 TLS/sec-ch-ua/cookie 漂移/`__zp_stoken__`/编码全包了。
-- **(B)/(C)** 是“自己生成 token 拿出去用”，关键是别忘了 **URL 编码**。可跑通的例子见
+- **(B)** 是“自己生成 token 拿出去用”，关键是别忘了 **URL 编码**。可跑通的例子见
   [`tests/gen_external_request.py`](../tests/gen_external_request.py)。
+- **(C) 只是逆向研究方法**：当前仓库没有 URL 到本地文件的替换映射、security-js wrapper 注入或回滚机制，不应当作已交付功能。
 
 ---
 
 ## 6. 逆向方法论（踩坑沉淀）
 
-- **捕获要文件替换源码本身**：JS prototype hook 会被 JSVMP 混淆绕过、也有“调用早于 hook”的时序问题。
-  可靠做法是**文件替换 security-js 并在末尾追加 wrapper**（同一执行环境 → 绕不过）；并且要 patch
+- **研究需要捕获 security-js 源码本身时**，JS prototype hook 可能被 JSVMP 混淆绕过，也可能晚于真实调用。
+  研究方法是自行做 security-js 响应替换并追加 wrapper；**这套替换器尚未在项目中实现**。并且要 patch
   **调用真正所在的 bundle**（token 网关在 `app~2`，不是 main.js）。
 - **先 diff，再猜**：浏览器能成/自己不成 → 先逐字节比对两边请求与 cookie。
 - **不要把假设当结论**：本次逆向里“iframe 被销毁 / 必须 set/zpToken 祝福 / 风控升级 / seed 一次性”等
@@ -143,6 +144,6 @@ token 损坏 → `code:37「您的环境存在异常」`。
 
 ## 7. 升级了怎么办
 
-反调试 JS 升级 → `cli.py health boss` 报 patch 失配 → 下载失配的当前 JS bundle → 跑 `analysis/find_bm.py`
-重定位 → 改 `sites/boss/patches.py` 的 pattern（通常变量名变了、结构没变）。token/seed/编码逻辑
+反调试 JS 升级 → `cli.py health boss` 报 patch 失配 → 下载失配 bundle 到 `tmp/boss-analysis/`
+重定位 → 改 `sites/boss/patches.py` 的 pattern → 跑 `scripts/validate_boss_patches.py` 做实际改写和 JS 语法验证。token/seed/编码逻辑
 长期稳定，一般不需要动。

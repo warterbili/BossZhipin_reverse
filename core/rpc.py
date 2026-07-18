@@ -40,12 +40,18 @@ class RpcBus:
         self.stats["req"] += 1
         try:
             result = await asyncio.wait_for(fut, timeout=timeout)
-            self.stats["ok"] += 1
+            if isinstance(result, dict) and result.get("ok") is False:
+                self.stats["err"] += 1
+            else:
+                self.stats["ok"] += 1
             return result
         except asyncio.TimeoutError:
             self.pending.pop(task_id, None)
             self.stats["timeout"] += 1
             raise HTTPException(status_code=504, detail="browser RPC timeout")
+        except asyncio.CancelledError:
+            self.pending.pop(task_id, None)
+            raise
 
     async def poll(self, wait: float = 5.0) -> dict | None:
         """浏览器侧轮询：拿一个任务（如有），否则空。"""

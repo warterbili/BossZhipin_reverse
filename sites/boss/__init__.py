@@ -27,9 +27,6 @@ ENTRYPOINTS = [
     "https://www.zhipin.com/",
     "https://www.zhipin.com/web/geek/jobs",
 ]
-FALLBACK_JS_URLS = [
-    "https://static.zhipin.com/zhipin-geek-seo/v5457/web/geek/js/main.js",
-]
 SCRIPT_SRC_RE = re.compile(
     r"<script[^>]+src=[\"']([^\"']+\.js(?:\?[^\"']*)?)[\"']",
     re.IGNORECASE,
@@ -75,8 +72,7 @@ def _discover_js_urls() -> tuple[list[str], dict[str, str]]:
             if _is_patch_target_js(url) and url not in urls:
                 urls.append(url)
     if not urls:
-        detail["fallback"] = "entrypoint discovery found no patch target JS"
-        urls.extend(FALLBACK_JS_URLS)
+        detail["discovery_error"] = "entrypoint discovery found no current patch target JS"
     return urls, detail
 
 
@@ -140,8 +136,8 @@ class BossPlugin(SitePlugin):
                 "Boss 反爬 JS 升级了。请帮我更新 sites/boss/patches.py 里的签名。\n"
                 f"丢失的 patch: {missing}\n"
                 "已检查当前线上 JS: " + ", ".join(_short_url(u) for u, _ in bundles[:8]) + "\n"
-                "下载后用 analysis/find_bm.py / decode_strings.py 重新定位"
-                "（通常是变量名变了，结构没变）。"
+                "将失配 bundle 放到 tmp/boss-analysis/ 后按 SKILL.md 重新定位，"
+                "并运行 scripts/validate_boss_patches.py 验证实际改写。"
             )
 
         detail_out = {

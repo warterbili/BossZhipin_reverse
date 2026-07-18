@@ -1,7 +1,7 @@
 [project]
 name = "mitm-rpc"
 version = "0.1.0"
-description = "Bypass anti-bot/anti-debug by turning your browser into an RPC client. Site-agnostic, plugin-based."
+description = "Boss Zhipin anti-debug response rewriting and logged-in browser RPC research toolkit."
 authors = [{ name = "lsd" }]
 readme = "README.md"
 license = { text = "MIT" }

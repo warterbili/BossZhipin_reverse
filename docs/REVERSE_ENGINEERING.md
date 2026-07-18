@@ -1,7 +1,7 @@
 # 反爬逆向方法论
 
 > 基于 Boss 直聘的实战，提炼的通用方法论。
-> **不在本仓库放任何目标站的源代码** —— 你需要自己去 `analysis/` 文件夹本地下载。
+> **不把任何目标站源代码纳入版本控制** —— 临时 bundle 只放在本项目 `tmp/boss-analysis/`。
 
 ## 目标站常见反爬层
 
@@ -45,7 +45,7 @@
 ### Step 1. 拉到目标站的 main.js
 
 ```bash
-curl https://target/main.js > analysis/main.js
+curl https://target/main.js > tmp/boss-analysis/main.js
 ```
 
 通常 main.js 数百 KB 到几 MB，混淆过。
@@ -177,10 +177,10 @@ token 损坏 → `code:37「您的环境存在异常」`。
 
 ## 工具清单
 
-`analysis/` 里推荐放（**仅本地**）：
+`tmp/boss-analysis/` 里推荐放（**仅本地**）：
 
 ```
-analysis/
+tmp/boss-analysis/
 ├── main.js                 目标站主 JS（curl 下来）
 ├── main_v<old>.js          上次的版本，diff 看变化
 ├── find_bm.py              你写的字符串/regex 搜索脚本
@@ -188,4 +188,4 @@ analysis/
 └── notes.md                逆向笔记
 ```
 
-`.gitignore` 已经排除整个 `analysis/`，不会上传。
+`.gitignore` 已经排除整个 `tmp/`，不会上传。

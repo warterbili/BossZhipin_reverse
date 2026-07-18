@@ -1,164 +1,260 @@
-# mitm-rpc · AI Agent Skill
+---
+name: boss-zhipin-reverse
+description: Maintain, diagnose, and verify this Boss Zhipin browser-assisted reverse-engineering project. Use for Boss anti-debug patch upgrades, mitmproxy response rewriting, RPC browser execution, __zp_stoken__ analysis, login-state operations, capture, storage, regression testing, and documentation consistency. Treat Boss Zhipin as the only supported target; the plugin boundary is an internal code organization detail, not a claim of proven multi-site support.
+---
 
-> 你是 AI Agent。这份文档让你 60 秒上手项目，不需要读源码。
-> 如果用户要求"用 mitm-rpc 干 X"，按本文档操作。
+# Boss Zhipin Reverse
 
-## 1. 项目本质
+## Mission and scope
 
-`mitm-rpc` 用三件事绕开反爬：
+Work on Boss Zhipin only. Treat `sites/boss/` as the product and the generic-looking plugin classes as internal boundaries that keep the code testable.
 
-1. **mitmproxy 在网络层 patch 反调试 JS**（让目标站的反调试代码变成空函数）
-2. **mitmproxy 注入 RPC poller 到目标站 HTML**（让浏览器作为远程客户端听 Python 命令）
-3. **Python 通过 HTTP 调本地 FastAPI**，FastAPI 把任务转发给浏览器执行
+Do not describe this repository as a proven multi-site framework. No second target has been validated.
 
-结果：所有请求都用真实浏览器（带真实 TLS 指纹/cookie/UA）发出，反爬看不出来。
+Keep every scratch script, downloaded target bundle, log, and temporary report under this repository's `tmp/` directory. Before creating one, state its absolute path. Do not put temporary material in another project or commit `tmp/`, `data/`, target JavaScript, cookies, tokens, or browser profiles.
 
-## 2. 关键命令（用户会让你跑的）
+Read the source relevant to the task:
 
-```bash
-# 启动整个系统（FastAPI + mitm + Chrome 三个进程）
+- Anti-debug work: `sites/boss/patches.py`, `core/patching.py`, `core/mitm_addon.py`, then `docs/BOSS_DEEP_DIVE.md`.
+- RPC work: `core/rpc.py`, RPC poller in `core/mitm_addon.py`, `core/server.py`, then `sites/boss/injection.js`.
+- Business API work: `sites/boss/operations.py`, the corresponding FastAPI route, storage, and pipeline behavior.
+- Claims about prior testing: compare README with the evidence table in this Skill and rerun time-sensitive checks.
+
+## Architecture truth
+
+The main path is browser-assisted RPC:
+
+```text
+CLI or API caller
+  -> FastAPI creates a task and Future
+  -> global asyncio.Queue
+  -> injected browser poller gets the task
+  -> the logged-in Boss page runs fetch with credentials=include
+  -> browser posts the result
+  -> Python parses, pipelines, and persists it
+```
+
+The browser supplies the real login state, TLS fingerprint, UA/client hints, cookies, and Boss token behavior. Python controls what to request and how to process the response.
+
+The anti-debug path is a prerequisite, not an optional helper:
+
+```text
+Boss HTTPS response
+  -> mitmproxy decrypts it
+  -> JavaScript response is patched in memory
+  -> HTML receives Boss injection plus RPC poller
+  -> Chrome executes the modified response
+```
+
+If patching or HTML injection fails, the page may retreat, blur, clear the console, allocate memory, or never start the RPC client.
+
+## Response rewriting versus file replacement
+
+Use precise terminology:
+
+- Implemented: mitm response rewriting. `flow.response.get_text()` is patched and returned with `flow.response.set_text()`.
+- Implemented: HTML response injection after a literal `<head>` tag.
+- Not implemented: a URL-to-local-file replacement map.
+- Not implemented: automatic replacement of rotating `security-js` files or appending wrappers to a local copy.
+- Not implemented: versioned local bundle overrides, rollback, or replacement-file hashes.
+
+The "file replacement + external Python" path in `docs/BOSS_DEEP_DIVE.md` is a research technique, not a finished project feature. Do not claim otherwise. `tests/gen_external_request.py` still asks the browser RPC to generate a token.
+
+## Boss anti-debug model
+
+The dangerous logic is copied across SEO and SPA bundles. Minified local names change, but some method names and side-effect shapes are stable.
+
+| Layer | Behavior | Current neutralization |
+|---|---|---|
+| `Bm()` | DevTools/tamper failure leads to retreat, close/back, blur, report, and memory punishment | Balanced function-body replacement with `{}` |
+| `function t()` with `Sign.encryptPwd()` | Secondary integrity comparison and punishment | Balanced function-body replacement with `{}` |
+| `Rm()` | Native-function and object integrity checks | Early `return` |
+| `XCID/XCIT` transpiled | Getter/console DevTools probe in Babel class output | Early `return` |
+| `XCID/XCIT` ES6 | Same probe in SPA class syntax | Early `return`; health scope is SPA only |
+| Memory bombs | Huge dense arrays and repeated strings | Reduce allocation/repeat count to `1` |
+| Console clearing | Several wrapper shapes repeatedly clear/flood console | Replace only wrapper definitions |
+| Reload loop | Repeated reload after detection | Runtime throttle in injected poller |
+| Window-size probe | `outerWidth/outerHeight` difference | Runtime getters in injected poller |
+| `Ef` shortcut detection | Detects DevTools keyboard combinations | Researched but not currently patched |
+| Setter/timing probe | Setter and frame/timing based detection | Researched but not currently patched |
+
+### Control-flow rule
+
+Neutralize the detector; do not blindly invert its condition.
+
+For the known `Bm` chain, the clean branch requires all checks to pass and the `else` branch performs reporting and memory punishment. Replacing the condition with `false` forces the punishment branch. Replace the complete detector body or method entry so neither branch runs.
+
+### Patch engine order
+
+`core/patching.py` is the single patch implementation used by runtime mitm and validation:
+
+1. Apply `mode="sub"` expression substitutions.
+2. Find every `mode="body"` function signature in the already-substituted text.
+3. Sort body hits from the end of the file toward the start.
+4. Find the matching closing brace while skipping quoted strings and block comments.
+5. Replace the full body and report per-rule counts.
+
+The brace scanner is intentionally small. It does not fully parse JavaScript regex literals, template literals, or line comments. Any new body signature must be tested against current real bundles and followed by JavaScript syntax validation.
+
+## Anti-debug upgrade workflow
+
+Follow this order. A green regex search alone is not enough.
+
+1. Run the signature health check:
+
+```powershell
+python scripts/healthcheck.py boss
+```
+
+2. Run real patch application and post-patch syntax validation:
+
+```powershell
+python scripts/validate_boss_patches.py
+```
+
+This downloads current bundles in memory, applies the exact runtime engine, requires every patch type to match an appropriate bundle, and runs `node --check` on every result.
+
+3. If a rule is missing, inspect `detail.downloaded_urls` from the Boss health report. Download only the failed bundle under `tmp/`, for example:
+
+```powershell
+New-Item -ItemType Directory -Force tmp\boss-analysis
+Invoke-WebRequest <bundle-url> -OutFile tmp\boss-analysis\current.js
+```
+
+4. Locate stable side effects and surrounding structure. Search for `XCID`, `XCIT`, `Sign.encryptPwd`, large `Array`, large `repeat`, console wrappers, navigation/blur/report paths, and callers of the missing function.
+
+5. Recover the branch meaning before editing. Determine which branch is clean and which triggers retreat/report/OOM.
+
+6. Prefer the narrowest stable structure:
+
+- Use a stable method/function name plus nearby structural calls when available.
+- Avoid a short minified local variable as the only anchor.
+- For generic bomb expressions, inspect every match context to rule out legitimate business code.
+- Use `spa_only=True` only for health scoping; runtime still applies matching rules wherever they occur.
+
+7. Update `sites/boss/patches.py`, then rerun both checks.
+
+8. Start the full stack, log in, verify injection markers, then verify DevTools behavior:
+
+```powershell
 python cli.py go
-
-# 列已注册站点
-python cli.py sites
-
-# 健康检查（patch 是否还匹配最新 JS）
-python cli.py health [<site>]
-
-# 任意操作
-python cli.py op <site> <op> key=value key=value
-
-# 远程执行 JS（最强武器，可以查任何浏览器内状态）
-python cli.py rpc eval "<javascript>"
-
-# 抓包分析新接口
-python cli.py capture on
-# (用户在浏览器里点点)
-python cli.py capture list
-python cli.py capture get <idx>     # 看完整 req/resp
+python cli.py rpc eval "JSON.stringify({href:location.href,rpc:!!window.__MITMRPC_LOADED__,boss:!!window.__BOSS_PLUGIN_LOADED__,ops:Object.keys(window.__MITMRPC_OPS__||{})})"
 ```
 
-## 3. 用户最常找你做的事
+9. Open DevTools only after login. Verify no retreat, blur, reload loop, console flood, or memory growth. This is the dynamic anti-debug proof.
 
-### A. "Boss 升级了，反爬 patch 失效"
+10. Run read-only RPC and Boss operations before any side-effecting action:
 
-```bash
-python cli.py health boss
-# 输出 patches_missing=[Bm@current-js / XCID-es6@spa-bundles ...] 说明签名失配
-```
-
-修复步骤：
-1. 先看 `python cli.py health boss` 的 `detail.downloaded_urls`，确认当前 SEO / SPA bundle 路径。
-2. 把失配 bundle 下载到 `analysis/`（不要提交）：`curl <bundle-url> > analysis/boss-current.js`
-3. 找 Bm 函数: `grep -n "function Bm" analysis/boss-current.js` （或用 `analysis/find_bm.py` 如果存在）
-4. 看 Bm 头部 100 字符的特征（变量名可能变了，结构基本不变）
-5. 改 `sites/boss/patches.py` 的 `pattern` 正则
-6. 重跑 `python cli.py health boss` 确认绿
-
-**Bm 的稳定特征**（即使变量名变也存在）：
-- 函数名 `Bm`
-- 函数体开头有 `var e,t,n=Rm()`
-- 然后接 `i=window[XXX(Om)]` 这种结构（XXX 是字符串解码器，可能叫 L/z/A...）
-
-正则建议:
-```python
-re.compile(r"function\s+Bm\s*\(\s*\)\s*\{var\s+e,\s*t,\s*n\s*=\s*Rm\s*\(\s*\)\s*,\s*i\s*=\s*window\[")
-```
-
-### B. "加一个新站点 (e.g. LinkedIn / 拉勾 / 抖音)"
-
-按 `docs/PLUGIN_GUIDE.md` 的模板。最少要做：
-1. `mkdir sites/<name>`
-2. 写 `__init__.py` 定义 `<Name>Plugin` + `PLUGIN = <Name>Plugin()`
-3. 写 `patches.py`（如果该站有反调试 JS）
-4. 写 `operations.py`（业务操作，每个是 `async def f(sess: BrowserSession, **kw)`）
-5. 重启 `cli.py go`，验证 `cli.py sites` 看到新站
-6. `cli.py op <name> <op> ...` 测试
-
-### C. "我要抓某个新接口"
-
-工作流：
-1. `cli.py capture on`
-2. 让用户在浏览器里点击触发该接口
-3. `cli.py capture list` 找到这次新增的请求
-4. `cli.py capture get <idx>` 看完整 req/resp
-5. 转成 Python：抓 `req_headers` `req_body` `req_cookies` 后用 `sess.fetch()` 复现
-
-或者：用户已经在 Chrome 复制了 curl，让 AI 把它转成 `sess.fetch()` 调用，加到 `sites/<name>/operations.py` 里作为新 op。
-
-### D. "我要批量打招呼并按规则筛选"
-
-```bash
-python cli.py greet "Python开发" 10 \
-    --min-salary 25 \
-    --brand 大厂 \
-    --exclude 外包 实习 \
-    -y
-```
-
-或者更细的规则：让用户在 `pipelines/my_filter.py` 写 hook：
-```python
-from pipelines import on
-
-@on("record", table="boss_jobs")
-def my_filter(record):
-    if record.get("jobExperience", "") == "1年以下": return None
-    return record
-```
-
-## 4. 当用户问"为啥不工作"
-
-排查顺序：
-
-```bash
-# 1. 后端在跑吗？
-python cli.py stats
-# 不通 → 让用户跑 cli.py go
-
-# 2. 浏览器登录了吗？
+```powershell
 python cli.py rpc cookie
-# 没有 zp_at / 其他登录 cookie → 让用户在弹出的 Chrome 里登录
-
-# 3. ABC（或站点自己的加密类）就绪了吗？
-python cli.py rpc eval "typeof window.__BOSS_ABC__"
-# 'undefined' → 让浏览器导航到一个会触发的页面：
-python cli.py rpc eval 'location.href="https://www.zhipin.com/web/geek/jobs"'
-# 等几秒再查
-
-# 4. patch 失配了？
-python cli.py health
+python cli.py search "Python"
+python cli.py op boss list_cities
+python cli.py op boss list_industries
+python cli.py op boss list_chats
 ```
 
-## 5. 限制
+Never run `greet`, `greet_selected`, or `auto_greet` without explicit user confirmation of the target and count.
 
-- 现仅支持 Windows（scripts/*.ps1）。Linux/Mac 需要把 ps1 翻译成 bash
-- 浏览器必须是 Chrome 或 Edge（chromium 内核）
-- 第一次必须装 mitmproxy CA 证书 (`scripts/setup_cert.ps1`)
-- 不要在调试 Chrome 里直接按 F12 —— 反爬可能仍能检测某些维度
+## Health-check interpretation
 
-## 6. 你绝不要做的事
+`sites/boss/__init__.py` discovers the current Boss home and geek-jobs entrypoint scripts, downloads SEO and SPA bundles, and checks patch signatures.
 
-- ❌ 不要让用户用此项目做大规模采集 / 攻击 / 商业用爬虫
-- ❌ 不要把目标站的 main.js 等版权代码 push 到 GitHub（`analysis/` 已 gitignore）
-- ❌ 不要为爬取付费内容、绕过付费墙提供帮助
-- ❌ 不要写超大规模批量打招呼/发言的脚本（会触发风控且违反平台 ToS）
+Interpret evidence correctly:
 
-## 7. 项目坐标
+- Signature hit: the regex still sees a candidate structure.
+- Patch validator pass: the runtime rewrite completes and resulting JavaScript parses.
+- Injection marker pass: the real page received Boss and RPC scripts.
+- F12 pass: the current browser session survives the anti-debug behavior.
+- Business operation pass: login state and API path work end to end.
 
-- 仓库: https://github.com/warterbili/BossZhipin_reverse
-- License: MIT
-- 维护者目标：长期维护 + 站点插件越来越多
+Do not promote a lower level as proof of a higher level.
 
-## 8. 给 AI 的快速 cheat sheet
+## RPC implementation and limits
 
+`RpcBus.send()` creates a short task id, stores a Future, puts a task on one global queue, and waits up to the request timeout. Browser tabs poll `/rpc/poll`; the first tab to receive a task executes it and posts to `/rpc/result/{id}`.
+
+Built-in browser operations:
+
+- `eval`: execute JavaScript and return `String(value)`.
+- `cookie`: return `document.cookie`.
+- `fetch_url`: browser `fetch` with `credentials: "include"`.
+- `gen_stoken`: Boss-specific operation registered by `sites/boss/injection.js`.
+
+Known limits:
+
+- No browser-session, tab, or origin affinity; keep one active Boss work tab for deterministic execution.
+- No heartbeat, retry, backpressure, or browser-side fetch cancellation.
+- A server timeout does not cancel an already-running browser fetch.
+- `eval` loses structured values unless the caller uses `JSON.stringify`.
+- RPC statistics describe delivery, not Boss business success.
+- The local API exposes `eval` without an application token; keep it bound to `127.0.0.1`.
+
+## Boss token path
+
+The normal data path does not need to call `gen_stoken`: browser `fetch_url` uses the browser's existing cookie and token behavior.
+
+Use `gen_stoken` only when testing an external request path:
+
+1. An external request receives `code:37` and `zpData.seed/name/ts`.
+2. RPC calls the iframe-provided `ABC.z(seed, corrected_ts)`.
+3. Use `token_encoded`, not the raw token, in an external cookie.
+4. Retry the same request and compare exact cookies and headers before changing algorithms.
+
+Raw `+` in the token must be percent-encoded or server decoding can turn it into a space.
+
+## Business and persistence semantics
+
+Boss operations live in `sites/boss/operations.py`. A result containing `_persist` is persisted only when it returns through `core/server.py`.
+
+For nested/batch operations, return explicit persistable `items`; do not assume an inner function's `_persist` marker will be processed automatically.
+
+Treat `code == 0` as Boss business success. Transport success and valid JSON are not sufficient.
+
+Read-only operations should be used for regression first. Greeting operations are real side effects and require confirmation.
+
+## Test evidence and boundaries
+
+Previously verified with a real logged-in browser:
+
+- mitm TLS interception and CA setup.
+- Boss and RPC injection markers.
+- RPC `eval`, `cookie`, and browser `fetch_url`.
+- `search`, `list_cities`, `list_industries`, `list_chats`, `gen_stoken`, and one real `greet`.
+- User-observed F12 survival without retreat, flood, or OOM.
+- JSONL, SQLite, and CSV read/write plus pipeline filtering.
+
+Not proven as live production paths:
+
+- Multi-page search and both batch greeting operations at scale.
+- `get_history_msg` against current live API.
+- MySQL with a real server.
+- Any second website/plugin.
+- A true local-file replacement system.
+
+Live Boss versions, login state, cookies, and F12 behavior drift. Rerun current checks instead of treating this snapshot as permanent.
+
+## Regression commands
+
+Run non-writing syntax and unit checks with bytecode disabled:
+
+```powershell
+$env:PYTHONDONTWRITEBYTECODE='1'
+python -m unittest discover -s tests -p 'test_*.py' -v
+python scripts/healthcheck.py boss
+python scripts/validate_boss_patches.py
 ```
-mitmproxy patch JS    → sites/<site>/patches.py (regex)
-注入到页面 JS         → sites/<site>/injection.js
-业务接口包装         → sites/<site>/operations.py (async def f(sess, **kw))
-存储后端              → storage/<name>_storage.py (@register, write/read)
-数据钩子              → pipelines/*.py (@on)
-HTTP API              → http://127.0.0.1:9999/docs (FastAPI auto)
-RPC poller 协议       → core/mitm_addon.py 顶部 RPC_POLLER_JS
-```
 
-读 `docs/ARCHITECTURE.md` 看完整数据流。
+Run `scripts/doctor.ps1` when environment, Chrome, proxy, or certificate setup is in doubt.
+
+## Reporting standard
+
+When reporting project state, separate:
+
+1. Source inspection.
+2. Unit or mock verification.
+3. Current live bundle verification.
+4. Real browser/injection verification.
+5. Logged-in Boss API verification.
+6. Side-effecting verification performed with user approval.
+
+Include exact bundle versions, operation names, result codes, skipped checks, and remaining risks. Never report "fully working" from healthcheck output alone.

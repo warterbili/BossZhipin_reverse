@@ -11,7 +11,7 @@ minify 名各不同，但**类方法名 XCID / XCIT 跨 bundle 共享**、且 co
 ⚠️ 心法「绕过，别翻转」: 反调试的门 if(n&&i&&a&&o) 全 true 才是干净分支，else 是惩罚分支(上报+内存炸弹)。
    把门翻成 if(false) = 强制走惩罚分支 = 自爆。正确做法是把整个检测【函数/方法置空 return】，门两边都不进。
 
-升级失配（healthcheck 红灯）时：下载失配的当前 JS bundle → 跑 analysis/find_bm.py → 调下面的 pattern。
+升级失配（healthcheck 红灯）时：下载失配 bundle 到 tmp/boss-analysis/ → 按 SKILL.md 重定位 → 调整 pattern。
 完整逐层原理见 docs/BOSS_DEEP_DIVE.md。
 """
 from __future__ import annotations

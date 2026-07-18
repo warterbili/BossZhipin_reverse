@@ -1,6 +1,8 @@
 # 插件指南
 
-## 加新站点（约 100 行）
+## SitePlugin 内部边界参考
+
+> 本项目目前只支持 Boss 直聘。本文仅记录内部抽象的组织方式，不表示其他站点已适配或验证。
 
 新建 `sites/<sitename>/` 目录：
 
@@ -199,7 +201,7 @@ def log_to_csv(record):
 ```
 
 **支持的事件**：
-- `record:<table>` `record:*` `record` —— 存储前
+- `record` —— 存储前，用 `table=...` 过滤
 - `capture` —— mitm 抓到新请求
 - `<op_name>:after` —— operation 完成（如 `search:after`、`greet:after`）
 

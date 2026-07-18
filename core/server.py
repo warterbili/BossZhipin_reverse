@@ -180,23 +180,8 @@ async def health(site: str):
     plugin = PLUGINS.get(site)
     if plugin is None:
         raise HTTPException(404, f"site {site} not found")
-    sess = BrowserSession(bus=bus)
-
-    async def fetch_main_js() -> str | None:
-        # 通过浏览器去取 main.js（带真实 cookie），再 patch 检查
-        for d in plugin.domains:
-            if not d.startswith("static."):
-                continue
-            try:
-                r = await sess.fetch(f"https://{d}/", method="GET")
-                if r.get("ok") and r.get("status") == 200:
-                    return r.get("body", "")
-            except Exception:
-                pass
-        return None
-
-    # 注：很多 plugin 的 health_check 用 sync requests 而不是 RPC，简化逻辑
-    rep = plugin.health_check(lambda: None)
+    # Boss 健康检查直接发现和下载当前公开 bundle，不依赖登录态 RPC。
+    rep = await asyncio.to_thread(plugin.health_check, lambda: None)
     return {
         "site": rep.site, "ok": rep.ok, "ts": rep.timestamp,
         "patches_ok": rep.patches_ok, "patches_missing": rep.patches_missing,
