@@ -143,6 +143,6 @@ token 损坏 → `code:37「您的环境存在异常」`。
 
 ## 7. 升级了怎么办
 
-反调试 JS 升级 → `cli.py health boss` 报 patch 失配 → 重新下载 main.js → 跑 `analysis/find_bm.py`
+反调试 JS 升级 → `cli.py health boss` 报 patch 失配 → 下载失配的当前 JS bundle → 跑 `analysis/find_bm.py`
 重定位 → 改 `sites/boss/patches.py` 的 pattern（通常变量名变了、结构没变）。token/seed/编码逻辑
 长期稳定，一般不需要动。

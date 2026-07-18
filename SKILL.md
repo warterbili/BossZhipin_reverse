@@ -44,15 +44,16 @@ python cli.py capture get <idx>     # 看完整 req/resp
 
 ```bash
 python cli.py health boss
-# 输出 patches_missing=[Bm@v5457/...] 说明签名失配
+# 输出 patches_missing=[Bm@current-js / XCID-es6@spa-bundles ...] 说明签名失配
 ```
 
 修复步骤：
-1. 拉最新 main.js: `curl https://static.zhipin.com/.../main.js > analysis/main.js`
-2. 找 Bm 函数: `grep -n "function Bm" analysis/main.js` （或用 `analysis/find_bm.py` 如果存在）
-3. 看 Bm 头部 100 字符的特征（变量名可能变了，结构基本不变）
-4. 改 `sites/boss/patches.py` 的 `pattern` 正则
-5. 重跑 `python cli.py health boss` 确认绿
+1. 先看 `python cli.py health boss` 的 `detail.downloaded_urls`，确认当前 SEO / SPA bundle 路径。
+2. 把失配 bundle 下载到 `analysis/`（不要提交）：`curl <bundle-url> > analysis/boss-current.js`
+3. 找 Bm 函数: `grep -n "function Bm" analysis/boss-current.js` （或用 `analysis/find_bm.py` 如果存在）
+4. 看 Bm 头部 100 字符的特征（变量名可能变了，结构基本不变）
+5. 改 `sites/boss/patches.py` 的 `pattern` 正则
+6. 重跑 `python cli.py health boss` 确认绿
 
 **Bm 的稳定特征**（即使变量名变也存在）：
 - 函数名 `Bm`

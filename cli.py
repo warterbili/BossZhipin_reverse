@@ -298,6 +298,8 @@ def cmd_health(args):
         print(f"\n{flag} {s['name']}")
         for p in r["patches_ok"]: print(f"   ✅ {p}")
         for p in r["patches_missing"]: print(f"   ❌ {p}")
+        if not r["ok"] and r.get("fix_prompt"):
+            print(r["fix_prompt"])
 
 
 # ─────────────── storage ───────────────

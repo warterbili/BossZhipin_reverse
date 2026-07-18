@@ -13,12 +13,29 @@
 
 不解算法、不伪造指纹、**用真实浏览器替你发请求**。所有反爬最难的部分（TLS/sec-ch-ua/cookie 漂移/`__zp_stoken__`）都被原生处理。
 
-**当前内置**：[Boss 直聘](sites/boss/) (search / greet / auto_greet / capture)
+**当前内置**：[Boss 直聘](sites/boss/)（search / search_pages / greet / greet_selected / auto_greet / list_chats / get_history_msg / list_cities / list_industries / get_cookie / gen_stoken / capture）
 **扩展**：写一个 `sites/<name>/` 目录就加了新站点（约 100 行）
 
 > 📖 **想看 Boss 整套防护是怎么逆出来的？** → **[`docs/BOSS_DEEP_DIVE.md`](docs/BOSS_DEEP_DIVE.md)**：
 > 反调试七层 + 中和、`__zp_stoken__` 算法、**seed 生命周期（服务端下发 / passport_config 缓存 / ~5 次复用）**、
 > **cookie 编码根因**、三种数据获取方案对比、逆向方法论。这是本仓库沉淀的 Boss 反爬技术说明书。
+
+---
+
+## ✅ 当前实测状态
+
+本仓库不是空架子，核心链路已按真实登录态跑通：
+
+| 模块 | 实测结果 |
+|---|---|
+| mitm TLS | 已能解密 Boss 直聘 HTTPS 流量 |
+| 反调试 patch | `Bm` / `Rm` / `XCID` / `XCIT` / console.clear / 内存炸弹签名健康检查通过（覆盖 SEO main.js + SPA vendor/app bundle） |
+| DevTools | 登录后打开 F12，页面不退站、不刷屏、不 OOM |
+| RPC | 真实浏览器 `eval` / `cookie` / `fetch_url` 闭环通过 |
+| Boss 业务 | search / list_cities / list_industries / list_chats / gen_stoken / greet 均已跑通 |
+| 存储与管道 | jsonl / sqlite / csv 写读通过，pipeline 去重/过滤生效 |
+
+`greet` 会真实给招聘者发消息，批量使用前请先确认目标和间隔策略。
 
 ---
 
@@ -35,7 +52,7 @@ cd BossZhipin_reverse
 .\.venv\Scripts\python cli.py go
 ```
 
-弹出来的 Chrome 里登录目标站点（**不要按 F12**）。
+弹出来的 Chrome 里登录目标站点。首次登录阶段建议先别按 F12；登录完成后如需调试，再打开 DevTools 验证 patch 状态。
 
 另开一个终端，开始用：
 
@@ -144,7 +161,7 @@ stats                                            RPC 计数等
 ## 📁 目录
 
 ```
-mitm-rpc/
+BossZhipin_reverse/
 ├── cli.py                      ★ 用户主入口
 ├── core/
 │   ├── server.py               FastAPI: RPC + API + Capture
@@ -170,8 +187,12 @@ mitm-rpc/
 │   └── healthcheck.py          CLI 健康检查
 ├── docs/
 │   ├── ARCHITECTURE.md
+│   ├── BOSS_DEEP_DIVE.md
 │   ├── PLUGIN_GUIDE.md
 │   └── REVERSE_ENGINEERING.md
+├── tests/
+│   ├── gen_external_request.py 外部 requests + gen_stoken 示例
+│   └── greet_from_csv.py       从 CSV 批量打招呼示例
 ├── SKILL.md                    AI Agent 用文档
 └── data/                       运行时（gitignored）
 ```
@@ -254,9 +275,10 @@ token 损坏 → `code:37`。`gen_stoken` 已直接返回 `token_encoded` 供外
 
 UI 健康灯红 / `cli.py health` 报 patch 失配时：
 
-1. 把目标站的最新 main.js 喂给任意 AI（Claude/GPT），附上 [`SKILL.md`](SKILL.md)
-2. AI 自动定位新签名，给你新的 `JsPatch` 正则
-3. 改 `sites/<name>/patches.py` 即可
+1. `cli.py health boss` 会先拉当前入口页，自动发现最新 SEO / SPA JS bundle，再逐个检查 patch 签名
+2. 把失配的 bundle 下载到本地 `analysis/`，连同 [`SKILL.md`](SKILL.md) 喂给任意 AI（Claude/GPT）
+3. AI 自动定位新签名，给你新的 `JsPatch` 正则
+4. 改 `sites/<name>/patches.py` 即可
 
 `SKILL.md` 是为 AI Agent 写的项目说明书 —— 任何 AI 拿到都能上手。
 

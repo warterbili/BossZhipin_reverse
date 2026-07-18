@@ -37,7 +37,7 @@ class JsPatch:
     notes: str = ""
     mode: str = "body"                # "body" | "sub"
     replacement: str = ""             # mode="sub" 的替换串（可含 \1 反向引用）
-    spa_only: bool = False            # 只在 SPA bundle(app~*/vendor-*)出现，不在 main.js → health_check 跳过
+    spa_only: bool = False            # 只应在 SPA bundle(app~*/vendor-*)里校验；SEO main.js 不要求命中
 
 
 @dataclass

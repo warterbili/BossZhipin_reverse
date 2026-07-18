@@ -44,6 +44,9 @@ def main():
     for p in plugins:
         print(f"\n=== {p.name} ===")
         rep = p.health_check(lambda: None)
+        checked = rep.detail.get("downloaded_urls") or rep.detail.get("checked_urls") or []
+        if checked:
+            print(f"  checked JS: {len(checked)}")
         for ok in rep.patches_ok:
             print(f"  ✅ {ok}")
         for miss in rep.patches_missing:

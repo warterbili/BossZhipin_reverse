@@ -99,9 +99,9 @@ await sess.bus.send("custom_op", **payload)   # 自定义 op
 
 ## 反爬升级时
 
-每个 plugin 实现 `health_check()`。它去拉最新 main.js，跑所有 `patches.pattern.search(js)`，任何失配就：
+每个 plugin 实现 `health_check()`。Boss 插件会先拉当前入口页，发现最新 SEO `main.js` 和 SPA `vendor-*`/`app~*` bundle，再检查每个 patch 是否至少命中一个适用 JS。任何失配就：
 - `health_check()` 返回 `ok=False, patches_missing=[...], fix_prompt="..."`
 - `cli.py health` 显示红
-- AI 拿 `fix_prompt` + 最新 main.js → 返回新的 patch regex
+- AI 拿 `fix_prompt` + 失配 bundle → 返回新的 patch regex
 
 这是项目"自我修复"能力的核心。

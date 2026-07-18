@@ -99,10 +99,10 @@ JsPatch(
 每次目标站改了 JS，签名可能失配。健康检查会发现：
 ```bash
 python cli.py health boss
-# patches_missing=[Bm@v5460/main.js]
+# patches_missing=[Bm@current-js] 或 [XCID-es6@spa-bundles]
 ```
 
-这时把新 main.js 喂给 AI（带 `SKILL.md`），它能快速找出新 pattern。
+这时按 `detail.downloaded_urls` 下载失配的当前 bundle（带 `SKILL.md`）喂给 AI，它能快速找出新 pattern。
 
 ---
 
